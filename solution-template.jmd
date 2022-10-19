@@ -19,6 +19,7 @@ Pkg.instantiate()
 <!--- this block is hidden, but stores the generator and demand data; you can use a dataframe to combine these or refactor as you'd like -->
 ```julia; echo = false; results = "hidden"
 # generator data
+names= ["Geothermal" "Coal" "CCGT" "CT" "Wind" "Solar"];
 investment_cost = [457000, 268000, 85000, 62580, 92000, 92000]
 op_cost = [0, 22, 35, 45, 0, 0]
 co2_emissions = [0, 1, 0.43, 0.55, 0, 0]
@@ -28,21 +29,103 @@ hours = 1:24
 demand = [1517, 1486, 1544, 1733, 2058, 2470, 2628, 2696, 2653, 2591, 2626, 2714, 2803, 2842, 2891,  2821, 3017, 3074, 2957,  2487, 2249, 1933, 1684, 1563]
 wind_cf = [0.58, 0.57, 0.55, 0.28, 0.14, 0.21, 0.03, 0.04, 0.01, 0.04, 0.04, 0.01, 0.04, 0.04, 0.01, 0.01, 0.01, 0.13, 0.30, 0.45, 0.44, 0.57, 0.55, 0.58]
 solar_cf = [0, 0, 0, 0, 0, 0, 0.20, 0.57, 0.80, 0.93, 0.99, 0.99, 0.85, 0.99, 0.95, 0.81, 0.55, 0.12, 0, 0, 0, 0, 0, 0]
+penalty= 9000; #/MWh not met
 ```
 
 # Problem 1
 
 ## Problem 1.1
+the decision variables for this problem will be the amount of installed capacity for 
+each type of power generation method (x_g). 
+x[1]= installed capacity of geothermal energy (in MW)
+x[2]= installed capacity of coal energy (in MW)
+x[3]= installed capacity of CCGT energy (in MW)
+x[4]= installed capacity of CT energy (in MW)
+x[5]= installed capacity of wind energy (in MW)
+x[6]= installed capacity of solar energy (in MW)
 
 ## Problem 1.2
+Formulate the objective function. Make sure to include any needed derivations or 
+justifications for your equation(s).
+
+y_g,t is the production (in MW) from generator type g in time period t
+Z is the total cost and is calculated by Z = investment cost + operating cost + penalty cost 
+
+```julia
+
+function NamelessForNow(demand, investment_cost, op_cost, thermal_cf, wind_cf, solar_cf, x, y)
+# find y_max
+y_max= zeros(24, 6);    # max production in MWh (t, g)
+y_max[:, 1].= thermal_cf[1]*x[1];
+y_max[:, 2].= thermal_cf[2]*x[2];
+y_max[:, 3].= thermal_cf[3]*x[3];
+y_max[:, 4].= thermal_cf[4]*x[4];
+y_max[:, 5]= wind_cf.*x[5];
+y_max[:, 6]= solar_cf.*x[5];
+# find investment/installation cost
+C_install= zeros(1, 6); # this is the installation costs = installed capacity*investment_cost/365
+C_install= vec(x).*vec(investment_cost)/365;
+
+# finding cost of unmet demand
+missingDemand= zeros(24, 1); # demand not met
+for t=1:24
+    if demand[t]>sum(y[t, :])
+        missingDemand[t]= demand[t] - sum(y[t, :])
+    else
+        missingDemand[t]= 0;
+    end
+end
+C_demand= zeros(24, 1); # cost of not meeting demand
+C_demand= missingDemand*9000;
+
+# finding operational costs
+C_op= zeros(24, 6); # operational costs= op costs*production
+C_op[1:24, :] .= op_cost';
+C_op= y.*C_op;
+
+Z= sum(C_demand) + sum(C_install) + sum(C_op);
+return Z
+end
+```
 
 ## Problem 1.3
+Derive all relevant constraints (you don't need to write them all out, but they 
+should all be represented through your notation). Make sure to include any needed 
+justifications or derivations. Why is your set of constraints complete?
+
+y<=x*CF
+
+x>0
+
+y>0
 
 ## Problem 1.4
+Implement your optimization problem in JuMP. For this sub-problem, you only need 
+to provide a code block with the problem formulation.
+
+```julia
+using JuMP
+using HiGHS
+optimizeCost= Model(HiGHS.Optimizer)
+
+@variable(optimizeCost, x[1:1, 1:6] >= 0)
+@variable(optimizeCost, y[1:24, 1:6] >= 0)
+@objective(optimizeCost, Min, NamelessForNow(demand, investment_cost, op_cost, thermal_cf, wind_cf, solar_cf, x, y))
+@constraint(optimizeCost, [t=1:24, g=1:6], y[t,g] <= y_max[t, g]);
+print(optimizeCost)
+optimize!(optimizeCost)
+
+```
 
 ## Problem 1.5
+Find the optimal solution. How much should the utility build of each type of 
+generating plant? What will the total cost be? How much energy will be non-served?
 
 ## Problem 1.6
+Plot how much electricity will be generated under this plan each hour by each type 
+of plant. Make both a line plot for the raw amounts (using plot) and a stacked area 
+plot to show relative contributions to the total demand (using areaplot). What are 
+your take-aways?
 
 # Problem 2
 
